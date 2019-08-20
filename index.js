@@ -43,17 +43,16 @@ const GetOldEnvironment = (param) => {
                 return reject(param);
             } else {
                 logger.info('GetOldEnvironment data', data);
-                if (data.Environments.length === 1 &&
-                    data.Environments[0].Health === 'Green' &&
-                    data.Environments[0].HealthStatus === 'Ok' &&
-                    data.Environments[0].Status === 'Ready') {
-                    param.oldEnvironmentId = data.Environments[0].EnvironmentId;
-                    logger.info('GetOldEnvironment param', param);
-                    return resolve(param);
-                } else {
-                    //param.err = new Error('Environment is not unhealthy');
-                    return reject(param);
+                for (let i = 0; i < data.Environments.length; i++) {
+                    const environment = data.Environments[i];
+                    if (environment.Health === 'Green' && environment.HealthStatus === 'Ok' && environment.Status === 'Ready') {
+                        param.oldEnvironmentId = environment.EnvironmentId;
+                        logger.info('GetOldEnvironment param', param);
+                        return resolve(param);
+                    }
                 }
+                //param.err = new Error('Environment is not unhealthy');
+                return reject(param);
             }
         });
     });
@@ -157,9 +156,7 @@ const WaitHealthyEnvironment = (param) => {
                 return reject(param);
             } else {
                 logger.info('WaitHealthyEnvironment data', data);
-                if (data.Color === 'Green' &&
-                    data.HealthStatus === 'Ok' &&
-                    data.Status === 'Ready') {
+                if (data.Color === 'Green' && data.HealthStatus === 'Ok' && data.Status === 'Ready') {
                     logger.info('WaitHealthyEnvironment param', param);
                     return resolve(param);
                 } else {
@@ -213,8 +210,8 @@ const CreateApplicationVersion = (param) => {
         param.step = 'CreateApplicationVersion';
         const params = {
             ApplicationName: param.applicationName,
-            VersionLabel: param.newEnvironmentName,
-            Description: param.newEnvironmentName,
+            VersionLabel: param.versionLabel,
+            Description: param.versionLabel,
             Process: true,
             SourceBundle: {
                 S3Bucket: param.s3Bucket,
@@ -224,18 +221,11 @@ const CreateApplicationVersion = (param) => {
         logger.info('CreateApplicationVersion params', params);
         elasticbeanstalk.createApplicationVersion(params, (err, data) => {
             if (err) {
-                //fixme 이부분은 문제가 있을듯 하다. 애플리케이션버전을 삭제하고 다시 만들지 고민해봐야겠다.
-                if (err.message.indexOf('already exists') > -1) {
-                    param.versionLabel = params.VersionLabel;
-                    logger.info('CreateApplicationVersion param', param);
-                    return resolve(param);
-                }
                 logger.error(err, err.stack);
                 //param.err = err;
                 return reject(param);
             } else {
                 logger.info('CreateApplicationVersion data', data);
-                param.versionLabel = data.ApplicationVersion.VersionLabel;
                 logger.info('CreateApplicationVersion param', param);
                 return resolve(param);
             }
@@ -272,19 +262,14 @@ const UpdateEnvironment = (param) => {
     });
 };
 
-/**
- * 기존환경과 새환경의 url 상호교체
- *
- * @param param
- * @returns {Promise<unknown>}
- * @constructor
- */
 const SwapEnvironmentCName = (param) => {
     return new Promise((resolve, reject) => {
         param.step = 'CreateApplicationVersion';
         const params = {
-            SourceEnvironmentName: param.oldEnvironmentName,
-            DestinationEnvironmentName: param.newEnvironmentName
+            SourceEnvironmentId: param.oldEnvironmentId,
+            DestinationEnvironmentId: param.newEnvironmentId
+            //SourceEnvironmentName: param.oldEnvironmentName,
+            //DestinationEnvironmentName: param.newEnvironmentName
         };
         logger.info('SwapEnvironmentCName params', params);
         elasticbeanstalk.swapEnvironmentCNAMEs(params, function (err, data) {
@@ -301,24 +286,17 @@ const SwapEnvironmentCName = (param) => {
     });
 };
 
-/**
- * 환경삭제
- *
- * @param environmentName
- * @returns {Promise<unknown>}
- * @constructor
- */
-const TerminateEnvironment = (environmentName) => {
+const TerminateEnvironment = (environmentId) => {
     return new Promise((resolve, reject) => {
         const params = {
-            EnvironmentName: environmentName
+            EnvironmentId: environmentId
         };
         logger.info('TerminateEnvironment params', params);
         elasticbeanstalk.terminateEnvironment(params, function (err, data) {
             if (err) {
                 logger.error(err, err.stack);
                 const param = {
-                    environmentName: environmentName,
+                    environmentId: environmentId,
                     step: 'TerminateEnvironment',
                     err: err
                 };
@@ -326,25 +304,18 @@ const TerminateEnvironment = (environmentName) => {
                 return reject(param);
             } else {
                 logger.info('TerminateEnvironment data', data);
-                logger.info('TerminateEnvironment environmentName', environmentName);
-                return resolve(environmentName);
+                logger.info('TerminateEnvironment environmentId', environmentId);
+                return resolve(environmentId);
             }
         });
     });
 };
 
-/**
- * 삭제환경 확인
- *
- * @param environmentName
- * @returns {Promise<unknown>}
- * @constructor
- */
-const WaitTerminateEnvironment = (environmentName) => {
+const WaitTerminateEnvironment = (environmentId) => {
     return new Promise((resolve, reject) => {
         const params = {
             AttributeNames: ['All'],
-            EnvironmentName: environmentName
+            EnvironmentId: environmentId
         };
         logger.info('WaitTerminateEnvironment params', params);
         elasticbeanstalk.describeEnvironmentHealth(params, function (err, data) {
@@ -352,11 +323,11 @@ const WaitTerminateEnvironment = (environmentName) => {
                 //정상적으로 삭제된거임
                 if (err.message.indexOf('No Environment found') > -1) {
                     logger.info('WaitTerminateEnvironment environmentName', environmentName);
-                    return resolve(environmentName);
+                    return resolve(environmentId);
                 }
                 logger.error(err, err.stack);
                 const param = {
-                    environmentName: environmentName,
+                    environmentName: environmentId,
                     step: 'WaitTerminateEnvironment',
                     err: err
                 };
@@ -365,7 +336,7 @@ const WaitTerminateEnvironment = (environmentName) => {
             } else {
                 logger.info('WaitTerminateEnvironment data', data);
                 const param = {
-                    environmentName: environmentName,
+                    environmentName: environmentId,
                     step: 'WaitTerminateEnvironment',
                     err: new Error('Environment is not terminated')
                 };
@@ -389,12 +360,13 @@ if (!phase || !moduleName || !buildNo) {
 }
 
 const param = {
-    deployFile: ``, //배포할 zip 파일
-    s3Bucket: '', //S3 버킷명
-    s3Key: ``, //S3 키 (파일위치 + 파일명)
-    applicationName: '', //Beanstalk 애플리케이션명
-    environmentPrefix: ``, //Beanstalk 환경명 Prefix
-    oldEnvironmentName: `xxxxxxx-blue` //Beanstalk 기존 환경명
+    deployFile: `../xxx/yyy.zip`,
+    s3Bucket: 's3-bucket-name',
+    s3Key: `xxx/yyy.zip`,
+    applicationName: 'application-name',
+    environmentPrefix: `environment-name-prefix`,
+    oldEnvironmentName: `environment-name-blue`,
+    versionLabel: `version-label`
 };
 
 GetOldEnvironment(param)
@@ -431,7 +403,7 @@ GetOldEnvironment(param)
         }, {retries: 30, minTimeout: 10000, maxTimeout: 10000});
     })
     .then((param) => {
-        return TerminateEnvironment(param.oldEnvironmentName);
+        return TerminateEnvironment(param.oldEnvironmentId);
     })
     .then((param) => {
         return promiseRetry((retry, number) => {
