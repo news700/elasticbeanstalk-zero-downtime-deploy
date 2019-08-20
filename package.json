@@ -1,0 +1,19 @@
+{
+  "name": "elasticbeanstalk-zero-downtime-deploy",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "directories": {
+    "lib": "lib"
+  },
+  "description": "",
+  "dependencies": {
+    "aws-sdk": "^2.509.0",
+    "log4js": "^5.0.0",
+    "promise-retry": "^1.1.1"
+  }
+}
